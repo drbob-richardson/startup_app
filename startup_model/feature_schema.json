@@ -1,0 +1,60 @@
+{
+  "model_name": "logreg_simple",
+  "holdout": {
+    "roc_auc": 0.7903846153846155,
+    "accuracy": 0.772972972972973,
+    "f1": 0.8306451612903226
+  },
+  "ui": {
+    "business_types": [
+      "Tech / Software",
+      "Web / Mobile",
+      "E-Commerce",
+      "Biotech",
+      "Consulting",
+      "Other"
+    ],
+    "locations": [
+      "Silicon Valley (CA)",
+      "New York (NY)",
+      "Boston (MA)",
+      "Texas (TX)",
+      "Other"
+    ],
+    "funding_options": [
+      "Angel",
+      "VC",
+      "Series A",
+      "Series B",
+      "Bootstrapped"
+    ],
+    "strategy": [
+      "\ud83d\ude80 Big swing early",
+      "\ud83d\udcb0 Funding first"
+    ],
+    "network": [
+      [
+        "Independent operators",
+        "low"
+      ],
+      [
+        "Balanced connectors",
+        "mid"
+      ],
+      [
+        "Well-connected insiders",
+        "high"
+      ]
+    ],
+    "visibility": [
+      [
+        "Under the radar",
+        "low"
+      ],
+      [
+        "Top 500 buzz",
+        "high"
+      ]
+    ]
+  }
+}

@@ -1,380 +1,498 @@
-#!/usr/bin/env python3
-# spotify_app.py — Simple, educational 3-class demo with Small/Medium/Large per model.
-from __future__ import annotations
-from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
-import json, os
-import numpy as np
-import streamlit as st
+# startup_app.py — clean baseline with landing page and working image cards
 
-# -------------------- Page setup --------------------
-st.set_page_config(page_title="Model Spotify Popularity", page_icon="🎧", layout="centered")
+import sys, json
+from pathlib import Path
+import pandas as pd
+import streamlit as st
+import skops.io as skio
+import sklearn
+
+# -------------------- Config --------------------
+st.set_page_config(page_title="Create a Startup", page_icon="🚀", layout="centered")
+DEBUG = False
 
 APP_DIR = Path(__file__).parent
-ARTIFACT_DIR = Path(os.environ.get("SPOTIFY_ARTIFACT_DIR", APP_DIR / "artifacts" / "spotify_v2")).resolve()
-MANIFEST_PATH = ARTIFACT_DIR / "manifest.json"
+MODEL_DIR = APP_DIR / "startup_model"
+MODEL_PATH = MODEL_DIR / "startup_success_model.skops"
+SCHEMA_PATH = MODEL_DIR / "feature_schema.json"
 
-ASSETS_DIR = APP_DIR / "assets"
-FAMILY_DIR = ASSETS_DIR / "family"
-PRESET_DIR = ASSETS_DIR / "preset"
+ASSETS_DIR = APP_DIR / "assets" 
+HERO_DIR = ASSETS_DIR / "hero"
 
-CLASS_NAMES = ["Low", "Medium", "High"]
-
-# Optional explicit map for the family icons and generic size art
+# Hard map images you’ve created
 IMAGE_MAP = {
-    "family": {
-        "Logistic regression": str(FAMILY_DIR / "logreg.png"),
-        "Decision tree":       str(FAMILY_DIR / "tree.png"),
-        "Neural network":      str(FAMILY_DIR / "nn.png"),
+    "biz": {
+        "Tech / Software": str(ASSETS_DIR / "biz" / "tech_software.png"),
+        "Web / Mobile":    str(ASSETS_DIR / "biz" / "web_mobile.png"),
+        "E-Commerce":    str(ASSETS_DIR / "biz" / "ecommerce.png"),
+        "Biotech":    str(ASSETS_DIR / "biz" / "biotech.png"),
+        "Consulting":    str(ASSETS_DIR / "biz" / "consulting.png"),
+        "Other":    str(ASSETS_DIR / "biz" / "other.png"),
     },
-    "preset": {
-        "Small":  str(PRESET_DIR / "small.png"),
-        "Medium": str(PRESET_DIR / "medium.png"),
-        "Large":  str(PRESET_DIR / "large.png"),
+    "network": {
+        "Well-connected insiders": str(ASSETS_DIR / "network" / "well-connected_insiders.png"),  # ← add this
     }
 }
 
-# -------------------- Utilities --------------------
-def load_manifest() -> Dict[str, Any]:
-    if not MANIFEST_PATH.exists():
-        st.error(f"Manifest not found at {MANIFEST_PATH}. Run the trainer to create it.")
-        st.stop()
-    return json.loads(MANIFEST_PATH.read_text())
+# -------------------- Config --------------------
+st.set_page_config(page_title="Create a Startup", page_icon="🚀", layout="centered")
 
-def _img_for(group: str, label: str, family: Optional[str] = None) -> Optional[Path]:
-    """
-    Prefer family-specific size art like preset/logreg_small.png,
-    then fall back to generic small.png / medium.png / large.png,
-    then try a literal filename match (e.g., 'logreg.png').
-    """
-    # 1) Family-specific for size cards
-    if group == "preset" and family:
-        base = PRESET_DIR / f"{family}_{label.lower()}"
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
-            p = base.with_suffix(ext)
-            if p.exists():
-                return p
 
-    # 2) Mapped generic
-    mapped = IMAGE_MAP.get(group, {}).get(label)
-    if mapped and Path(mapped).exists():
-        return Path(mapped)
 
-    # 3) Literal filename (fallback)
-    base = FAMILY_DIR if group == "family" else PRESET_DIR
-    for ext in (".png", ".jpg", ".jpeg", ".webp"):
-        p = base / f"{label.lower()}{ext}"
+from pathlib import Path
+import json
+import streamlit as st
+
+APP_DIR = Path(__file__).parent
+MODEL_DIR = APP_DIR / "startup_model"
+
+def _load_schema():
+    candidates = [
+        APP_DIR / "feature_schema.json",
+        MODEL_DIR / "feature_schema.json",
+        Path("feature_schema.json")
+    ]
+    for p in candidates:
         if p.exists():
-            return p
-    return None
+            try:
+                with open(p, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
 
-def draw_card(group: str, label: str, sub: Optional[str], key: str, family: Optional[str] = None, emoji="🎛️") -> bool:
-    img = _img_for(group, label, family=family)
-    with st.container():
+def render_landing():
+    meta = _load_schema()
+    holdout = meta.get("holdout", {})
+    roc_auc = holdout.get("roc_auc")
+    acc = holdout.get("accuracy")
+    f1 = holdout.get("f1")
+
+    # LANDING-ONLY width bump (removed on next step because app reruns)
+    st.markdown(
+        """
+        <style>
+          .block-container { max-width: 1200px; padding-top: 3.5rem; padding-bottom: 2rem; }
+          @media (min-width: 1600px) { .block-container { max-width: 1400px; } }
+          .hero-h1 { font-size: 54px; font-weight: 800; line-height: 1.05; margin: 0 0 12px; }
+          .hero-sub { font-size: 18px; opacity: 0.9; margin-bottom: 16px; }
+          .big-button button { font-size: 20px !important; padding: 12px 0 !important; width: 100% !important; }
+          .hero-emoji { font-size: 160px; line-height: 1; text-align: center; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+    # Keep your image/icon on the left
+    try:
+        col1, col2 = st.columns([2, 2], gap="large")
+    except TypeError:
+        col1, col2 = st.columns([2, 2])
+
+    with col1:
+        img = hero_image_path()
         if img:
             st.image(str(img), use_container_width=True)
         else:
-            st.markdown(f"<div style='font-size:64px;text-align:center'>{emoji}</div>", unsafe_allow_html=True)
-        st.markdown(f"**{label}**")
-        if sub:
-            st.caption(sub)
-        return st.button("Choose", key=key, use_container_width=True)
+            st.markdown("<div style='font-size:96px'>🚀</div>", unsafe_allow_html=True)
 
-def result_fx_once(ok: bool) -> None:
-    if st.session_state.get("fx_done", False):
-        return
-    try:
-        _ = st.balloons() if ok else st.snow()
-    except Exception:
-        pass
-    st.session_state["fx_done"] = True
-
-def friendly_model_name(fam: str, size: str) -> str:
-    if fam == "logreg":
-        return {"Small": "Logistic — Top 10 features (with interactions)",
-                "Medium": "Logistic — L1 selects best subset",
-                "Large": "Logistic — All features + interactions"}[size]
-    if fam == "tree":
-        return {"Small": "Decision Tree — Heavy pruning",
-                "Medium": "Decision Tree — CV-pruned (optimal α)",
-                "Large": "Decision Tree — Unpruned"}[size]
-    if fam == "mlp":
-        return {"Small": "Neural Net — Shallow",
-                "Medium": "Neural Net — Best (tuned)",
-                "Large": "Neural Net — Deep"}[size]
-    return f"{fam} — {size}"
-
-# -------------------- Styling --------------------
-st.markdown(
-    """
-    <style>
-      [data-testid="stAppViewContainer"] .main .block-container {
-        max-width: 1100px; padding-top: 3.0rem !important; padding-bottom: 2rem;
-      }
-      .hero-h1 { font-size: 46px; font-weight: 800; line-height: 1.08; margin: 0 0 10px; }
-      .hero-sub { font-size: 18px; opacity: 0.9; margin-bottom: 16px; }
-      .edu-box { background: #0b13241a; border: 1px solid #0b132433; border-radius: 12px; padding: 14px 16px; }
-      .smallnote { font-size: 12px; opacity: 0.7; }
-      .tight ul { margin-top: 0.25rem; }
-      .tight li { margin-bottom: 0.35rem; }
-      .lined { border-top: 1px dashed #ddd; margin: 10px 0 16px; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# -------------------- App state --------------------
-steps = ["landing", "data", "family", "size", "result"]
-if "step" not in st.session_state: st.session_state.step = 0
-st.session_state.setdefault("family", None)  # "logreg" | "tree" | "mlp"
-st.session_state.setdefault("size", None)    # "Small" | "Medium" | "Large"
-
-def goto(name: str) -> None:
-    st.session_state.step = steps.index(name)
-
-# -------------------- Panes --------------------
-def pane_landing():
-    col1, col2 = st.columns([1.15, 2])
-    with col1:
-        st.markdown("<div style='font-size:140px; line-height:1; text-align:center'>🎧</div>", unsafe_allow_html=True)
     with col2:
+        # NEW headline + subtitle
         st.markdown(
             "<div class='hero-h1'>Data Scientists Build Models to Determine Which Factors Drive Predictions</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<div class='hero-sub'>We split tracks into <b>High / Medium / Low</b> popularity and train different "
-            "models to predict the category.</div>",
+            "<div class='hero-sub'>Try to find the right factors to build a successful start-up.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("Explore the data →", use_container_width=True):
-            goto("data"); st.experimental_rerun()
 
-def pane_data(manifest: Dict[str, Any]):
-    if "pop3" not in manifest.get("tasks", {}):
-        st.error("Manifest missing task 'pop3'. Please run the trainer.")
-        st.stop()
-    info = manifest["tasks"]["pop3"]["dataset_info"]
-    rows = info.get("rows", {})
-    nums = info.get("numeric_features", [])
-    cats = info.get("categorical_features", [])
+        st.markdown("<div class='big-button'>", unsafe_allow_html=True)
+        if st.button("Start modeling →", use_container_width=True):
+            st.session_state.step = 1  # goes to "type"
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.subheader("The data we’ll model")
-    st.markdown(
-        f"- **Goal**: Predict a track’s popularity bucket — **Low / Medium / High** — from audio & metadata.\n"
-        f"- **Total tracks**: {rows.get('total','?')} (train: {rows.get('train','?')}, "
-        f"val: {rows.get('val','?')}, test: {rows.get('test','?')})\n"
+
+# ---------- Counterfactual helpers ----------
+def predict_from_choices(biz, loc, fund_list, strat, net_label, vis_label, apply_adj=True):
+    # Map labels → codes
+    net_code = dict(ui["network"]).get(net_label, "mid")       # low/mid/high
+    vis_code = dict(ui["visibility"]).get(vis_label, "low")    # low/high
+
+    # Build feature row (same logic as your result page)
+    cat_map = {
+        "Tech / Software": "software", "Web / Mobile": "web",
+        "E-commerce": "ecommerce", "E-Commerce": "ecommerce",  # support both spellings
+        "Biotech": "biotech", "Consulting": "consulting", "Other": "other"
+    }
+    feat = {}
+    feat["category_code"] = cat_map.get(biz, "other")
+
+    if "CA" in loc: feat["state_code"] = "CA"
+    elif "New York" in loc: feat["state_code"] = "NY"
+    elif "Boston" in loc: feat["state_code"] = "MA"
+    elif "Texas" in loc: feat["state_code"] = "TX"
+    else: feat["state_code"] = "OT"
+
+    sel = set(fund_list or [])
+    feat["has_angel"]  = int("Angel" in sel)
+    feat["has_VC"]     = int("VC" in sel)
+    feat["has_roundA"] = int("Series A" in sel)
+    feat["has_roundB"] = int("Series B" in sel)
+    rounds = feat["has_angel"] + feat["has_VC"] + feat["has_roundA"] + feat["has_roundB"]
+    if "Bootstrapped" in sel:
+        rounds = max(rounds - 1, 0)
+    feat["funding_rounds_b"] = pd.cut([rounds], bins=[-1, 0, 1, 3, 10], include_lowest=True).astype(str)[0]
+
+    if "Big swing" in strat:
+        feat["milestones_b"] = "(0, 1]"
+        feat["age_first_funding_b"] = "(1, 3]"
+    else:
+        feat["milestones_b"] = "(1, 3]"
+        feat["age_first_funding_b"] = "(0, 1]"
+
+    bucket = {"low": "(-1, 0]", "mid": "(0, 2]", "high": "(2, 5]"}
+    feat["relationships_b"]    = bucket[net_code]
+    feat["avg_participants_b"] = bucket[net_code]
+    feat["is_top500"] = int(vis_code == "high")
+
+    cols = ["state_code", "category_code", "has_angel", "has_VC", "has_roundA", "has_roundB",
+            "funding_rounds_b", "milestones_b", "age_first_funding_b", "relationships_b",
+            "avg_participants_b", "is_top500"]
+    x = pd.DataFrame([{c: feat.get(c, 0) for c in cols}], columns=cols)
+
+    base_p = float(pipe.predict_proba(x)[:, 1][0])
+
+    if apply_adj:
+        adj = 0.0
+        if vis_code == "high" and "Big swing" in strat:      adj += 0.03
+        if vis_code == "high" and "Funding first" in strat:  adj -= 0.02
+        if net_code == "high" and ("Bootstrapped" in sel):   adj -= 0.02
+        if net_code == "low"  and ("Bootstrapped" in sel):   adj += 0.01
+        base_p += adj
+
+    return min(max(base_p, 0.01), 0.99)
+
+
+# -------------------- Model loading --------------------
+if not MODEL_PATH.exists():
+    st.error("Model file not found")
+    st.stop()
+
+try:
+    untrusted = skio.get_untrusted_types(file=MODEL_PATH)
+    pipe = skio.load(MODEL_PATH, trusted=untrusted if untrusted else None)
+except Exception as e:
+    st.error(f"Model load failed: {e}")
+    st.stop()
+
+try:
+    schema = json.loads(SCHEMA_PATH.read_text())
+except Exception as e:
+    st.error(f"Failed to read schema: {e}")
+    st.stop()
+ui = schema.get("ui", {})
+
+# -------------------- Helpers --------------------
+def slugify(label: str) -> str:
+    return (
+        label.lower()
+        .replace("🚀", "").replace("💰", "")
+        .replace("/", " ").replace("&", "and")
+        .replace("(", "").replace(")", "")
+        .replace(",", "").replace("’", "").replace("'", "")
+        .strip().replace(" ", "_")
     )
-    with st.expander("What are the inputs?", expanded=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Numeric (examples):**")
-            st.markdown(
-                "- danceability, energy, loudness\n"
-                "- speechiness, acousticness, instrumentalness\n"
-                "- liveness, valence, tempo, duration_ms"
-            )
-        with c2:
-            st.markdown("**Categorical (examples):**")
-            st.markdown(
-                "- explicit flag (yes/no)\n"
-                "- musical key, mode\n"
-                "- time signature\n"
-                "- track_genre"
-            )
-        st.caption(
-            "We also create squared terms and interactions for numeric features to capture non-linear relationships."
+
+def option_image_path(pane_key: str, option_label: str):
+    mapped = IMAGE_MAP.get(pane_key, {}).get(option_label)
+    if mapped and Path(mapped).exists():
+        return Path(mapped)
+    slug = slugify(option_label)
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        p = ASSETS_DIR / pane_key / f"{slug}{ext}"
+        if p.exists():
+            return p
+    return None
+
+def hero_image_path():
+    for name in ("landing", "hero", "cover"):
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = HERO_DIR / f"{name}{ext}"
+            if p.exists():
+                return p
+    return None
+
+def draw_option_card(pane_key: str, option_label: str, sublabel: str | None, button_key: str) -> bool:
+    img_path = option_image_path(pane_key, option_label)
+    with st.container():
+        if img_path:
+            st.image(str(img_path), use_container_width=True)
+        st.markdown(f"**{option_label}**")
+        if sublabel:
+            st.caption(sublabel)
+        return st.button("Choose", key=button_key, use_container_width=True)
+
+def grid_choice(pane_key: str, options, state_key: str, advance_fn):
+    try:
+        cols = st.columns(3, gap="medium")  # gap works on newer Streamlit
+    except TypeError:
+        cols = st.columns(3)
+    for idx, (label, sub) in enumerate(options):
+        with cols[idx % 3]:
+            if draw_option_card(pane_key, label, sub, button_key=f"{pane_key}_{idx}"):
+                st.session_state[state_key] = label
+                advance_fn()
+                st.rerun()
+
+
+# -------------------- State --------------------
+steps = ["landing", "type", "loc", "funding", "strategy", "network", "visibility", "result"]
+if "step" not in st.session_state: st.session_state.step = 0
+def nxt():  st.session_state.step = min(st.session_state.step + 1, len(steps)-1)
+def back(): st.session_state.step = max(st.session_state.step - 1, 0)
+
+for k in ["biz","loc","fund","strat","net_label","vis_label","fund_set"]:
+    st.session_state.setdefault(k, None)
+if st.session_state.fund_set is None:
+    st.session_state.fund_set = set()
+
+pane = steps[st.session_state.step]
+
+# -------------------- Panes --------------------
+if pane == "landing":
+    # Use the modeling-forward landing you pasted above
+    render_landing()
+    st.stop()  # prevent the rest of the panes from rendering on first load
+
+
+    with col1:
+        img = hero_image_path()
+        if img:
+            st.image(str(img), use_container_width=True)
+        else:
+            # fallback emoji if no image
+            st.markdown("<div style='font-size:80px'>🚀</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(
+            "<div style='font-size:42px; font-weight:800; margin-bottom:12px;'>"
+            "Create a Startup</div>",
+            unsafe_allow_html=True,
         )
-
-    st.markdown("<div class='lined'></div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    if c1.button("⬅️ Back"):
-        goto("landing"); st.experimental_rerun()
-    if c3.button("Pick a model →"):
-        goto("family"); st.experimental_rerun()
-
-def pane_family():
-    st.subheader("Pick a model family")
-    left, right = st.columns([1.1, 1])
-
-    # LEFT: stacked option cards
-    with left:
-        # Logistic
-        if draw_card("family", "Logistic regression", "Probability model", key="fam_logreg"):
-            st.session_state.family = "logreg"; st.session_state.size = None
-            st.session_state["fx_done"] = False
-            goto("size"); st.experimental_rerun()
-        # Tree
-        if draw_card("family", "Decision tree", "If–then rules", key="fam_tree"):
-            st.session_state.family = "tree"; st.session_state.size = None
-            st.session_state["fx_done"] = False
-            goto("size"); st.experimental_rerun()
-        # NN
-        if draw_card("family", "Neural network", "Learns patterns", key="fam_mlp"):
-            st.session_state.family = "mlp"; st.session_state.size = None
-            st.session_state["fx_done"] = False
-            goto("size"); st.experimental_rerun()
-
-    # RIGHT: compact explainer table
-    with right:
-        st.markdown("**What’s the difference?**")
+        st.markdown(
+            "<div style='font-size:18px; line-height:1.4; margin-bottom:24px;'>"
+            "Make a few decisions and see your survival probability "
+            "based on a trained model.</div>",
+            unsafe_allow_html=True,
+        )
+        # bigger CTA button (using HTML for styling)
         st.markdown(
             """
-| Model | What it is | Where it shines | Where it can struggle |
-|---|---|---|---|
-| **Logistic regression** | Uses weighted inputs to estimate class probabilities. | Clear, explainable, fast. | Misses complex, non-linear patterns. |
-| **Decision tree** | A flow of IF–THEN rules that split the data. | Intuitive, handles mixed data well. | Can overfit if grown too deep. |
-| **Neural network** | Layers of simple units that learn patterns. | Captures complex relationships. | Needs tuning; may overfit if too large. |
+            <style>
+            .big-button button {
+                font-size: 20px !important;
+                padding-top: 12px !important;
+                padding-bottom: 12px !important;
+                width: 100% !important;
+            }
+            </style>
             """,
             unsafe_allow_html=True,
         )
-        st.caption("Pick one to choose a model size next (Small / Medium / Large).")
+        if st.container().button("👉 Try it now", key="hero_start"):
+            nxt()
+            st.rerun()
 
-    st.markdown("<div class='lined'></div>", unsafe_allow_html=True)
+
+
+elif pane == "type":
+    st.subheader("What kind of startup are you?")
+    opts = [(o, None) for o in ui["business_types"]]
+    grid_choice("biz", opts, "biz", nxt)
+    if st.button("⬅️ Back"): back()
+
+elif pane == "loc":
+    st.subheader("Where will you launch?")
+    opts = [(o, None) for o in ui["locations"]]
+    grid_choice("loc", opts, "loc", nxt)
+    if st.button("⬅️ Back"): back()
+
+elif pane == "funding":
+    st.subheader("How will you fund the journey? Choose all ways you raise money.")
+    fund_opts = ui["funding_options"]
+
+    # 3-column grid (with gap on newer Streamlit)
+    try:
+        cols = st.columns(3, gap="medium")
+    except TypeError:
+        cols = st.columns(3)
+
+    for i, label in enumerate(fund_opts):
+        with cols[i % 3]:
+            is_on = label in st.session_state.fund_set
+            sub = "Selected" if is_on else None
+            if draw_option_card("funding", label, sub, button_key=f"fund_{i}"):
+                if is_on:
+                    st.session_state.fund_set.remove(label)
+                else:
+                    st.session_state.fund_set.add(label)
+                st.rerun()
+
     c1, c2 = st.columns(2)
-    if c1.button("⬅️ Data"):
-        goto("data"); st.experimental_rerun()
+    if c1.button("⬅️ Back"):
+        back()
+    if c2.button("Next ➡️"):
+        st.session_state.fund = sorted(list(st.session_state.fund_set))
+        nxt()
+        st.rerun()
 
-def pane_size(manifest: Dict[str, Any]):
-    fam = st.session_state.get("family")
-    if fam not in ("logreg", "tree", "mlp"):
-        goto("family"); st.experimental_rerun(); return
 
-    st.subheader("Choose model complexity")
-    left, right = st.columns([1.1, 1])
+elif pane == "strategy":
+    st.subheader("Pick your early strategy")
+    opts = [(o, None) for o in ui["strategy"]]
+    grid_choice("strategy", opts, "strat", nxt)
+    if st.button("⬅️ Back"): back()
 
-    # LEFT: Small / Medium / Large cards (family-specific art if present)
+elif pane == "network":
+    st.subheader("What’s your team’s network like?")
+    labels = [lbl for (lbl, _) in ui["network"]]
+    subs = {"Independent operators": "Lean & focused",
+            "Balanced connectors": "A few right doors",
+            "Well-connected insiders": "Warm intros"}
+    opts = [(lbl, subs.get(lbl)) for lbl in labels]
+    grid_choice("network", opts, "net_label", nxt)
+    if st.button("⬅️ Back"): back()
+
+elif pane == "visibility":
+    st.subheader("How visible are you?")
+    labels = [lbl for (lbl, _) in ui["visibility"]]
+    subs = {"Under the radar": "Quiet execution", "Top 500 buzz": "Momentum & press"}
+    opts = [(lbl, subs.get(lbl)) for lbl in labels]
+    grid_choice("visibility", opts, "vis_label", nxt)
+    if st.button("⬅️ Back"): back()
+
+else:
+    # ========= Results page with What-if panel + one-time confetti/snow =========
+
+    # --- Gather current baseline choices from session ---
+    biz        = st.session_state.get("biz", "Other")
+    loc        = st.session_state.get("loc", "Other")
+    fund       = st.session_state.get("fund", sorted(list(st.session_state.fund_set)))
+    strat      = st.session_state.get("strat", ui["strategy"][0])
+    net_label  = st.session_state.get("net_label", "Balanced connectors")
+    vis_label  = st.session_state.get("vis_label", "Under the radar")
+
+    # --- Compute baseline probability (PURE MODEL) ---
+    p = predict_from_choices(biz, loc, fund, strat, net_label, vis_label)
+    net_code = dict(ui["network"]).get(net_label, "mid")     # low/mid/high
+    vis_code = dict(ui["visibility"]).get(vis_label, "low")  # low/high
+
+    # --- Layout: left = outcome + narrative; right = What-if controls ---
+    try:
+        left, right = st.columns([2, 1], gap="large")
+    except TypeError:
+        left, right = st.columns([2, 1])
+
     with left:
-        if draw_card("preset", "Small", _size_subtitle(fam, "Small"), key="size_small", family=fam):
-            st.session_state.size = "Small"; st.session_state["fx_done"] = False
-            goto("result"); st.experimental_rerun()
-        if draw_card("preset", "Medium", _size_subtitle(fam, "Medium"), key="size_medium", family=fam):
-            st.session_state.size = "Medium"; st.session_state["fx_done"] = False
-            goto("result"); st.experimental_rerun()
-        if draw_card("preset", "Large", _size_subtitle(fam, "Large"), key="size_large", family=fam):
-            st.session_state.size = "Large"; st.session_state["fx_done"] = False
-            goto("result"); st.experimental_rerun()
+        st.subheader("Your outcome")
 
-    # RIGHT: short “how to think about size” box
-    with right:
-        st.markdown("**How to think about ‘Small / Medium / Large’**")
+        outcome_good = p >= 0.50
+        headline = "🎉 Congratulations!" if outcome_good else "Nice try!"
+        color = "#16a34a" if outcome_good else "#dc2626"
+
         st.markdown(
-            _size_explainer_md(fam),
+            f"<div style='font-size:36px; font-weight:800; color:{color}; margin:4px 0 8px;'>{headline}</div>",
             unsafe_allow_html=True,
         )
-        st.caption("Tip: Medium is often the sweet spot — flexible enough to learn patterns, "
-                   "but regularized to avoid memorizing noise.")
 
-    st.markdown("<div class='lined'></div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    if c1.button("⬅️ Pick a family"):
-        goto("family"); st.experimental_rerun()
+        # --- Confetti / snow: fire only the first time results are shown ---
+        if not st.session_state.get("result_fx_done", False):
+            try:
+                if outcome_good:
+                    st.balloons()
+                else:
+                    st.snow()
+            except Exception:
+                pass
+            st.session_state["result_fx_done"] = True
 
-def _size_subtitle(fam: str, size: str) -> str:
-    if fam == "logreg":
-        return {"Small": "Top 10 features (with interactions)",
-                "Medium": "L1 chooses the best subset",
-                "Large": "All features + interactions"}[size]
-    if fam == "tree":
-        return {"Small": "Heavy pruning",
-                "Medium": "CV-selected pruning (optimal α)",
-                "Large": "Unpruned"}[size]
-    if fam == "mlp":
-        return {"Small": "Shallow network",
-                "Medium": "Best tuned network",
-                "Large": "Deeper network"}[size]
-    return ""
+        # --- Optional splash images (if present) ---
+        if outcome_good and (ASSETS_DIR / "celebrate.png").exists():
+            st.image(str(ASSETS_DIR / "celebrate.png"), use_container_width=True)
+        elif (not outcome_good) and (ASSETS_DIR / "try_again.png").exists():
+            st.image(str(ASSETS_DIR / "try_again.png"), use_container_width=True)
 
-def _size_explainer_md(fam: str) -> str:
-    if fam == "logreg":
-        return (
-            "- **Small:** Keep only the top 10 most informative features (after creating squares & interactions).\n"
-            "- **Medium:** Let **L1** regularization *select* a sparse, optimal subset automatically.\n"
-            "- **Large:** Use **all** features (with squares & interactions) with L2.\n"
+        # --- Probability metric + brief narrative ---
+        st.metric("Predicted survival probability", f"{p*100:.1f}%")
+
+        bullets = []
+        bullets.append("Fast milestones." if "Big swing" in strat else "Runway first.")
+        bullets.append({"low": "Independent & lean.", "mid": "Balanced connections.", "high": "Insider access."}[net_code])
+        bullets.append("Buzz + momentum." if vis_code == "high" else "Quiet execution.")
+        st.markdown("\n".join(f"- {b}" for b in bullets))
+
+        # --- Reset CTA ---
+        if st.button("Start over 🔁", use_container_width=True):
+            for k in list(st.session_state.keys()):
+                if k not in ("step", "fund_set"):
+                    del st.session_state[k]
+            st.session_state.step = 0
+            st.session_state.fund_set = set()
+            st.session_state["result_fx_done"] = False  # explicit reset for next run
+            st.rerun()
+
+    with right:
+        st.subheader("What if?")
+
+        # Helper to get safe index for selectboxes
+        def _idx(lst, val, default=0):
+            try:
+                return lst.index(val)
+            except Exception:
+                return default
+
+        # --- Controls pre-filled with current baseline ---
+        cf_biz  = st.selectbox("Business type", ui["business_types"], index=_idx(ui["business_types"], biz), key="cf_biz")
+        cf_loc  = st.selectbox("Location", ui["locations"], index=_idx(ui["locations"], loc), key="cf_loc")
+        cf_fund = st.multiselect("Funding", ui["funding_options"], default=fund, key="cf_fund")
+        cf_strat = st.selectbox("Strategy", ui["strategy"], index=_idx(ui["strategy"], strat), key="cf_strat")
+
+        cf_net_label = st.selectbox(
+            "Network",
+            [lbl for (lbl, _) in ui["network"]],
+            index=_idx([lbl for (lbl, _) in ui["network"]], net_label),
+            key="cf_net"
         )
-    if fam == "tree":
-        return (
-            "- **Small:** A **heavily pruned** tree (fewer branches) → simple rules, less overfitting.\n"
-            "- **Medium:** Pruning strength (α) chosen by **cross-validation**.\n"
-            "- **Large:** **Unpruned** tree (can fit complex patterns but may overfit).\n"
+        cf_vis_label = st.selectbox(
+            "Visibility",
+            [lbl for (lbl, _) in ui["visibility"]],
+            index=_idx([lbl for (lbl, _) in ui["visibility"]], vis_label),
+            key="cf_vis"
         )
-    if fam == "mlp":
-        return (
-            "- **Small:** A **shallow** network → quick, stable, less capacity.\n"
-            "- **Medium:** The **best** tuned network (depth/width/reg picked on validation).\n"
-            "- **Large:** A **deeper** network for more capacity (with early stopping to protect against overfit).\n"
+
+        # --- Counterfactual probability (PURE MODEL) ---
+        cf_p = predict_from_choices(
+            cf_biz, cf_loc, cf_fund, cf_strat, cf_net_label, cf_vis_label
         )
-    return ""
 
-def pane_result(manifest: Dict[str, Any]):
-    fam = st.session_state.get("family")
-    size = st.session_state.get("size")
-    if fam not in ("logreg", "tree", "mlp") or size not in ("Small", "Medium", "Large"):
-        goto("family"); st.experimental_rerun(); return
+        st.metric(
+            "Counterfactual probability",
+            f"{cf_p*100:.1f}%",
+            delta=f"{(cf_p - p)*100:.1f} pp"
+        )
 
-    task = manifest["tasks"]["pop3"]
-    task_dir = Path(task["path"])
-    key_map = {
-        "logreg": {"Small": "logreg_small", "Medium": "logreg_medium", "Large": "logreg_large"},
-        "tree":   {"Small": "tree_small",   "Medium": "tree_medium",   "Large": "tree_large"},
-        "mlp":    {"Small": "mlp_small",    "Medium": "mlp_medium",    "Large": "mlp_large"},
-    }
-    model_key = key_map[fam][size]
-    metrics_path = task_dir / model_key / "metrics.json"
-    if not metrics_path.exists():
-        st.error(f"Metrics not found for {model_key}. Run the trainer.")
-        st.stop()
-
-    metrics = json.loads(metrics_path.read_text())
-    st.subheader("Out-of-sample results")
-    st.markdown(f"**{friendly_model_name(fam, size)}**  \n*Task:* `pop3` (High / Medium / Low)")
-
-    # Balloons/snow only once
-    result_fx_once(metrics.get("accuracy", 0.0) >= 0.55)
-
-    # Show concise, friendly metrics
-    c1, c2 = st.columns(2)
-    c1.metric("Accuracy (test)", f"{metrics.get('accuracy', 0)*100:.1f}%")
-    c2.metric("Macro-F1 (test)", f"{metrics.get('macro_f1', 0):.3f}")
-
-    st.markdown("<div class='edu-box'>", unsafe_allow_html=True)
-    st.markdown("**Why Medium is often best**")
-    st.markdown(
-        """
-- **Small** models can **underfit**: they’re simple and may miss patterns.
-- **Large** models can **overfit**: they memorize noise and don’t generalize well.
-- **Medium** models strike a **bias–variance balance** — enough flexibility to learn,
-  plus regularization/pruning/early stopping to avoid overfitting.
-        """
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='lined'></div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    if c1.button("⬅️ Change size"):
-        st.session_state["fx_done"] = False
-        goto("size"); st.experimental_rerun()
-    if c2.button("↩︎ Pick a family"):
-        st.session_state["fx_done"] = False
-        goto("family"); st.experimental_rerun()
-    if c3.button("🔁 Start over"):
-        for k in list(st.session_state.keys()):
-            if k not in ("step",):
-                del st.session_state[k]
-        st.session_state.step = 0
-        st.experimental_rerun()
-
-# -------------------- Router --------------------
-manifest = load_manifest()
-pane = steps[st.session_state.step]
-
-if pane == "landing":
-    pane_landing()
-elif pane == "data":
-    pane_data(manifest)
-elif pane == "family":
-    pane_family()
-elif pane == "size":
-    pane_size(manifest)
-else:
-    pane_result(manifest)
+        # --- Apply CF back to baseline ---
+        if st.button("Apply to baseline", use_container_width=True):
+            st.session_state.update({
+                "biz": cf_biz,
+                "loc": cf_loc,
+                "fund": sorted(list(cf_fund)),
+                "strat": cf_strat,
+                "net_label": cf_net_label,
+                "vis_label": cf_vis_label,
+            })
+            st.session_state.fund_set = set(cf_fund)
+            st.rerun()
